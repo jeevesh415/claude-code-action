@@ -6,10 +6,19 @@ import { runClaude } from "./run-claude";
 import { setupClaudeCodeSettings } from "./setup-claude-code-settings";
 import { validateEnvironmentVariables } from "./validate-env";
 import { installPlugins } from "./install-plugins";
+import { setExecutionFileOutputIfPresent } from "./execution-file";
 
 async function run() {
   try {
     validateEnvironmentVariables();
+
+    // The composite action's "Install Claude Code" step writes the binary to
+    // ~/.local/bin/claude. Pass that path explicitly so the Agent SDK doesn't
+    // fall back to its bundled platform package, which bun may resolve to the
+    // wrong libc variant on Linux.
+    const claudeExecutable =
+      process.env.INPUT_PATH_TO_CLAUDE_CODE_EXECUTABLE ||
+      `${process.env.HOME}/.local/bin/claude`;
 
     await setupClaudeCodeSettings(
       process.env.INPUT_SETTINGS,
@@ -20,7 +29,7 @@ async function run() {
     await installPlugins(
       process.env.INPUT_PLUGIN_MARKETPLACES,
       process.env.INPUT_PLUGINS,
-      process.env.INPUT_PATH_TO_CLAUDE_CODE_EXECUTABLE,
+      claudeExecutable,
     );
 
     const promptConfig = await preparePrompt({
@@ -38,8 +47,7 @@ async function run() {
       appendSystemPrompt: process.env.INPUT_APPEND_SYSTEM_PROMPT,
       fallbackModel: process.env.INPUT_FALLBACK_MODEL,
       model: process.env.ANTHROPIC_MODEL,
-      pathToClaudeCodeExecutable:
-        process.env.INPUT_PATH_TO_CLAUDE_CODE_EXECUTABLE,
+      pathToClaudeCodeExecutable: claudeExecutable,
       showFullOutput: process.env.INPUT_SHOW_FULL_OUTPUT,
     });
 
@@ -55,6 +63,7 @@ async function run() {
       core.setOutput("structured_output", result.structuredOutput);
     }
   } catch (error) {
+    setExecutionFileOutputIfPresent();
     core.setFailed(`Action failed with error: ${error}`);
     core.setOutput("conclusion", "failure");
     process.exit(1);
